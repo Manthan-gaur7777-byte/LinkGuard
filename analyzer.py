@@ -11,7 +11,7 @@ from bs4 import BeautifulSoup
 load_dotenv()
 #chori ka mal just kidding
 def search_threatfox(ioc):
-    auth_key = "478e0ca081ef7e1afd324306f63588ce4372861090700cbd"
+    auth_key = "Enter you own"
 
     if not auth_key:
         return {
@@ -83,7 +83,7 @@ def search_threatfox(ioc):
             "error": str(e)
         }
 def check_urlhaus(url):
-    auth_key = "478e0ca081ef7e1afd324306f63588ce4372861090700cbd"
+    auth_key = "Enter you own"
 
     if not auth_key:
         return {
