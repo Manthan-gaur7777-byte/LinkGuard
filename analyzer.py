@@ -563,8 +563,89 @@ def build_assessment(findings):
     }
 
 #mujhe nhi laga thake ham web scraping me aa jae ge per samay ka pahia
+def extract_identity(soup, page_url):
+    parsed_page = urlparse(page_url)
+
+    page_hostname = parsed_page.hostname
+    page_registered_domain = get_registered_domain(
+        page_hostname
+    ) if page_hostname else None
+    title = None
+    if soup.title:
+        title = soup.title.get_text(strip=True)
+    h1 = None
+    first_h1 = soup.find("h1")
+    if first_h1:
+        h1 = first_h1.get_text(strip=True)
+    site_name = None
+    og_site_name = soup.find(
+        "meta",
+        attrs={
+            "property": "og:site_name"
+        }
+    )
+    if og_site_name:
+        site_name = og_site_name.get("content")
+    canonical_url = None
+    for link in soup.find_all("link"):
+        rel = link.get("rel", [])
+        if isinstance(rel, str):
+            rel = [rel]
+        rel = [
+            value.lower()
+            for value in rel
+        ]
+        if "canonical" in rel:
+            href = link.get("href")
+            if href:
+                canonical_url = urljoin(
+                    page_url,
+                    href
+                )
+            break
+    canonical_hostname = None
+    canonical_registered_domain = None
+    if canonical_url:
+        canonical_parsed = urlparse(
+            canonical_url
+        )
+        canonical_hostname = (
+            canonical_parsed.hostname
+        )
+        if canonical_hostname:
+            canonical_registered_domain = (
+                get_registered_domain(
+                    canonical_hostname
+                )
+            )
+    canonical_domain_matches = None
+    if (
+        page_registered_domain
+        and canonical_registered_domain
+    ):
+        canonical_domain_matches = (
+            page_registered_domain
+            == canonical_registered_domain
+        )
+
+    return {
+        "page_hostname": page_hostname,
+        "page_registered_domain": page_registered_domain,
+        "title": title,
+        "h1": h1,
+        "site_name": site_name,
+        "canonical_url": canonical_url,
+        "canonical_hostname": canonical_hostname,
+        "canonical_registered_domain": (
+            canonical_registered_domain
+        ),
+        "canonical_domain_matches": (
+            canonical_domain_matches
+        )
+    }
 def analyze_html(html, page_url):
     soup = BeautifulSoup(html, "html.parser")
+    identity = extract_identity(soup, page_url)
     parsed_page = urlparse(page_url)
     page_host = parsed_page.hostname
     title = None
@@ -615,7 +696,8 @@ def analyze_html(html, page_url):
         "form_count": len(forms),
         "password_field_count": len(password_fields),
         "form_actions": form_actions,
-        "meta_refresh": meta_refresh
+        "meta_refresh": meta_refresh,
+        "identity": identity
     } 
 
 
