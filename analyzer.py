@@ -5,13 +5,12 @@ import ssl
 import requests
 from ipwhois import IPWhois
 import tldextract
-import os
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 load_dotenv()
 #chori ka mal just kidding
 def search_threatfox(ioc):
-    auth_key = "Enter you own"
+    auth_key = "Put your's here"
 
     if not auth_key:
         return {
@@ -83,7 +82,7 @@ def search_threatfox(ioc):
             "error": str(e)
         }
 def check_urlhaus(url):
-    auth_key = "Enter you own"
+    auth_key = "Put your's here"
 
     if not auth_key:
         return {
@@ -537,6 +536,77 @@ def generate_findings(result):
         if threat_types:
             finding["threat_types"] = sorted(threat_types)
         findings.append(finding)
+        # Detect password forms submitting to another registered domain
+    html_result = result.get("html_check") or {}
+
+    identity = html_result.get("identity") or {}
+
+    page_domain = identity.get("page_registered_domain")
+
+
+
+    #This is to check if the form is submiting the password to diifferent domain or not
+    #just chill some sites do this because they are poor
+    suspicious_forms = [
+        form
+        for form in html_result.get("form_actions", [])
+        if (
+            form.get("contains_password_field") is True
+            and form.get("cross_registered_domain") is True
+        )
+    ]
+
+    if suspicious_forms:
+        evidence = []
+
+        for form in suspicious_forms:
+            destination_domain = form.get(
+                "action_registered_domain"
+            )
+
+            evidence.append(
+                f"Password form submits from {page_domain} "
+                f"to {destination_domain}. "
+                f"Destination URL: {form.get('action')}"
+            )
+
+        findings.append({
+            "type": "cross_domain_password_submission",
+            "title": (
+                "Password form submits to a different "
+                "registered domain"
+            ),
+            "evidence": evidence
+        })
+
+
+    html_result = result.get("html_check") or {}
+
+    insecure_password_forms = [
+        form
+        for form in html_result.get("form_actions", [])
+        if (
+            form.get("contains_password_field") is True
+            and form.get("action_scheme") == "http"
+        )
+    ]
+
+    if insecure_password_forms:
+        evidence = []
+        for form in insecure_password_forms:
+            evidence.append(
+                "Password form submits over HTTP to "
+                f"{form.get('action')}"
+            )
+
+        findings.append({
+            "type": "insecure_password_submission",
+            "title": (
+                "Password form submits credentials over "
+                "unencrypted HTTP"
+            ),
+            "evidence": evidence
+        })
     return findings
 
 
@@ -672,10 +742,28 @@ def analyze_html(html, page_url):
             absolute_action
         ).hostname
 
+        action_registered_domain = (
+            get_registered_domain(action_host)
+            if action_host else None
+        )
+
+        page_registered_domain = identity.get(
+            "page_registered_domain"
+        )
+
+        cross_registered_domain = bool(
+            page_registered_domain
+            and action_registered_domain
+            and page_registered_domain != action_registered_domain
+        )
+
         form_actions.append({
             "action": absolute_action,
             "host": action_host,
             "cross_host": action_host != page_host,
+            "action_registered_domain": action_registered_domain,
+            "cross_registered_domain": cross_registered_domain,
+            "action_scheme": urlparse(absolute_action).scheme.lower(),
             "contains_password_field": (
                 form.find(
                     "input",
@@ -786,8 +874,6 @@ def fetch_html(url, max_bytes=500_000):
             "error": str(e)
         }
 
-
-    
 def analyze_url(url):
     
     parsed = urlparse(url)
@@ -884,5 +970,10 @@ def analyze_url(url):
             " This does not mean that the url is safe, it just means that we don't have any information about it in our threat intelligence sources."
         }]
         
-    result["assessment"] = build_assessment(result["findings"])
+    for index, finding in enumerate(result["findings"], start=1):
+        finding["id"] = f"finding_{index}"
+
+    result["assessment"] = build_assessment(
+        result["findings"]
+    )
     return result
